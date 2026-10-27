@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital San Miguel - Sistema de Consulta CIE-10</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS for Excel Parsing (.xlsx / .csv) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .highlight {
+            background-color: #fef08a;
+            font-weight: 600;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between selection:bg-blue-600 selection:text-white">
+
+    <!-- Header / Navbar -->
+    <header class="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white shadow-lg sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-md border border-white/20">
+                        <i class="fa-solid fa-hospital-user text-2xl text-blue-300"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg sm:text-xl leading-tight tracking-wide">Hospital San Miguel</h1>
+                        <p class="text-xs text-blue-200 font-medium">Buscador Oficial CIE-10 • Regla de Consistencia N° 53</p>
+                    </div>
+                </div>
+                <!-- Status Badge on Mobile -->
+                <span id="recordBadgeMobile" class="sm:hidden text-xs bg-blue-700/80 px-2.5 py-1 rounded-full font-mono text-blue-100">
+                    0 rec
+                </span>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                <button id="btnImportModal" class="flex-1 sm:flex-none text-xs sm:text-sm bg-blue-700 hover:bg-blue-600 active:bg-blue-800 text-white px-3.5 py-2 rounded-lg font-medium transition shadow-sm flex items-center justify-center space-x-2 border border-blue-500/30">
+                    <i class="fa-solid fa-file-excel text-emerald-300"></i>
+                    <span>Cargar Excel (16,170)</span>
+                </button>
+                <span id="recordBadgeDesktop" class="hidden sm:inline-flex text-xs bg-blue-950/60 border border-blue-400/20 px-3 py-1.5 rounded-lg font-mono text-blue-200">
+                    <i class="fa-solid fa-database mr-1.5 text-blue-400"></i> <span id="totalCount">0</span> diagnósticos
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+        
+        <!-- Search Controls Box -->
+        <div class="bg-white rounded-2xl shadow-md border border-slate-200/80 p-4 sm:p-6 mb-6 transition-all">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                <!-- Instant Search Input -->
+                <div class="relative flex-grow">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                        <i class="fa-solid fa-magnifying-glass text-lg"></i>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        placeholder="Buscar por Código (ej: A000) o Descripción (ej: Cólera, Fiebre)..." 
+                        class="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-300 text-slate-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm sm:text-base transition shadow-inner placeholder-slate-400 font-medium"
+                        autofocus
+                        autocomplete="off text"
+                    />
+                    <button id="btnClearSearch" class="hidden absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
+                        <i class="fa-solid fa-circle-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Filters / Options -->
+                <div class="flex items-center space-x-3 text-xs sm:text-sm text-slate-600">
+                    <label class="flex items-center space-x-2 cursor-pointer bg-slate-100 px-3 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-200/70 transition select-none">
+                        <input type="checkbox" id="chkStrictCode" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
+                        <span>Coincidencia Exacta</span>
+                    </label>
+                    <div class="text-right text-slate-500 font-mono text-xs hidden lg:block">
+                        Mostrando: <span id="filteredCount" class="font-bold text-blue-700">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast / Status indicator -->
+            <div class="mt-3 flex items-center justify-between text-xs text-slate-500 px-1">
+                <span id="searchStatus"><i class="fa-solid fa-bolt text-amber-500 mr-1"></i> Búsqueda en tiempo real activa</span>
+                <span class="text-slate-400 hidden sm:inline">Presione <kbd class="px-1.5 py-0.5 bg-slate-200 border border-slate-300 rounded text-slate-700 font-mono text-[10px]">ESC</kbd> para limpiar</span>
+            </div>
+        </div>
+
+        <!-- Notification Toast -->
+        <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 ease-out pointer-events-none">
+            <div class="bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 border border-slate-700">
+                <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+                <span id="toastMessage" class="text-xs sm:text-sm font-medium">Notificación</span>
+            </div>
+        </div>
+
+        <!-- Results Table / Cards View -->
+        <div class="bg-white rounded-2xl shadow-md border border-slate-200/80 overflow-hidden">
+            
+            <!-- Desktop Header Table -->
+            <div class="hidden md:grid grid-cols-12 bg-slate-100/80 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider py-3.5 px-6">
+                <div class="col-span-2">CIE-10</div>
+                <div class="col-span-5">Denominación / Diagnóstico</div>
+                <div class="col-span-2 text-center">Sexo</div>
+                <div class="col-span-2 text-center">Edad Mín/Máx</div>
+                <div class="col-span-1 text-center">Acción</div>
+            </div>
+
+            <!-- Dynamic List Container -->
+            <div id="resultsList" class="divide-y divide-slate-100 max-h-[62vh] overflow-y-auto">
+                <!-- Items populated via JS -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden py-16 px-4 text-center">
+                <div class="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                    <i class="fa-solid fa-file-circle-xmark"></i>
+                </div>
+                <h3 class="text-base font-semibold text-slate-800 mb-1">Sin resultados encontrados</h3>
+                <p class="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+                    No se encontraron diagnósticos que coincidan con el término ingresado. Intente buscar por código sin puntos o palabras clave de la denominación.
+                </p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500 mt-6">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div>
+                <span class="font-semibold text-slate-700">Hospital San Miguel</span> &copy; 2025 • Sistema de Consulta de Diagnósticos
+            </div>
+            <div class="flex items-center space-x-4">
+                <span class="text-emerald-600 font-medium flex items-center"><i class="fa-solid fa-wifi mr-1"></i> Compatible Offline PWA</span>
+                <span>•</span>
+                <button id="btnResetData" class="text-slate-400 hover:text-red-600 transition underline">Restablecer Datos</button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Import Modal -->
+    <div id="importModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 transform transition-all">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+                        <i class="fa-solid fa-file-excel text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base">Cargar Excel CIE-10 (16,170 registros)</h3>
+                        <p class="text-xs text-slate-500">Sube tu archivo .xlsx o .csv con el formato institucional</p>
+                    </div>
+                </div>
+                <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Upload Area -->
+            <div id="dropZone" class="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-8 text-center bg-slate-50 hover:bg-blue-50/50 transition cursor-pointer group">
+                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .json" class="hidden">
+                <i class="fa-solid fa-cloud-arrow-up text-4xl text-slate-400 group-hover:text-blue-600 mb-3 transition"></i>
+                <p class="text-sm font-semibold text-slate-700 mb-1">Haz clic para buscar o arrastra tu archivo Excel aquí</p>
+                <p class="text-xs text-slate-400">Formatos soportados: .XLSX, .CSV (Lee Columna A: Código, Columna B: Denominación)</p>
+            </div>
+
+            <!-- Processing Spinner -->
+            <div id="uploadProgress" class="hidden mt-4 text-center py-4">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-2"></div>
+                <p class="text-xs font-semibold text-slate-700" id="progressText">Procesando 16,170 registros...</p>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="btnCancelModal" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-medium rounded-lg transition">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script Logic -->
+    <script>
+        // Default seed data (Matches the Excel layout from Hospital San Miguel)
+        const SAMPLE_CIE10_DATA = [
+            { code: "A000", name: "COLERA DEBIDO A VIBRIO CHOLERAE 01, BIOTIPO CHOLERAE", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A001", name: "COLERA DEBIDO A VIBRIO CHOLERAE 01, BIOTIPO EL TOR", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A009", name: "COLERA, NO ESPECIFICADO", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A010", name: "FIEBRE TIFOIDEA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A011", name: "FIEBRE PARATIFOIDEA A", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A012", name: "FIEBRE PARATIFOIDEA B", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A013", name: "FIEBRE PARATIFOIDEA C", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A014", name: "FIEBRE PARATIFOIDEA, NO ESPECIFICADA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A020", name: "ENTERITIS DEBIDA A SALMONELLA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A021", name: "SEPTICEMIA DEBIDA A SALMONELLA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A022", name: "INFECCIONES LOCALIZADAS DEBIDAS A SALMONELLA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A028", name: "OTRAS INFECCIONES ESPECIFICADAS COMO DEBIDAS A SALMONELLA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A029", name: "INFECCION DEBIDA A SALMONELLA, NO ESPECIFICADA", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A030", name: "SHIGELOSIS DEBIDA A SHIGELLA DYSENTERIAE", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A031", name: "SHIGELOSIS DEBIDA A SHIGELLA FLEXNERI", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A032", name: "SHIGELOSIS DEBIDA A SHIGELLA BOYDI I", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A033", name: "SHIGELOSIS DEBIDA A SHIGELLA SONNEI", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A038", name: "OTRAS SHIGELOSIS", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "A039", name: "SHIGELOSIS DE TIPO NO ESPECIFICADO", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "J00",  name: "RINITIS AGUDA [RESFRIADO COMUN]", sex: "A", minAge: "0 DIAS", maxAge: "120 AÑOS", matCond: "NO APLICA" },
+            { code: "O000", name: "EMBARAZO ABDOMINAL", sex: "M", minAge: "10 AÑOS", maxAge: "55 AÑOS", matCond: "OBLIGATORIO" },
+            { code: "N40",  name: "HIPERPLASIA DE LA PROSTATA", sex: "H", minAge: "15 AÑOS", maxAge: "120 AÑOS", matCond: "NO APLICA" }
+        ];
+
+        // Global State
+        let db = [];
+        let filteredResults = [];
+        const BATCH_SIZE = 50; // Render limit for high performance virtualization
+
+        // DOM Elements
+        const searchInput = document.getElementById('searchInput');
+        const btnClearSearch = document.getElementById('btnClearSearch');
+        const chkStrictCode = document.getElementById('chkStrictCode');
+        const resultsList = document.getElementById('resultsList');
+        const emptyState = document.getElementById('emptyState');
+        const totalCountEl = document.getElementById('totalCount');
+        const filteredCountEl = document.getElementById('filteredCount');
+        const recordBadgeMobile = document.getElementById('recordBadgeMobile');
+        const importModal = document.getElementById('importModal');
+        const btnImportModal = document.getElementById('btnImportModal');
+        const btnCloseModal = document.getElementById('btnCloseModal');
+        const btnCancelModal = document.getElementById('btnCancelModal');
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressText = document.getElementById('progressText');
+        const btnResetData = document.getElementById('btnResetData');
+
+        // Initializer
+        window.addEventListener('DOMContentLoaded', () => {
+            loadDatabase();
+            setupEvents();
+        });
+
+        // Load DB from localStorage or fallback to Sample Data
+        function loadDatabase() {
+            try {
+                const stored = localStorage.getItem('SAN_MIGUEL_CIE10_DB');
+                if (stored) {
+                    db = JSON.parse(stored);
+                    showToast(`Cargados ${db.length.toLocaleString()} diagnósticos desde memoria`, 'success');
+                } else {
+                    db = [...SAMPLE_CIE10_DATA];
+                    saveToLocalStorage(db);
+                }
+            } catch (e) {
+                console.error("Error loading localStorage:", e);
+                db = [...SAMPLE_CIE10_DATA];
+            }
+            
+            updateStats();
+            performSearch();
+        }
+
+        function saveToLocalStorage(data) {
+            try {
+                localStorage.setItem('SAN_MIGUEL_CIE10_DB', JSON.stringify(data));
+            } catch (e) {
+                console.warn("Storage size limit exceeded, running in-memory session mode.");
+            }
+        }
+
+        function updateStats() {
+            const totalStr = db.length.toLocaleString();
+            totalCountEl.textContent = totalStr;
+            recordBadgeMobile.textContent = `${totalStr} rec`;
+        }
+
+        // Fast Digit-by-Digit Filtering Algorithm
+        function performSearch() {
+            const query = searchInput.value.trim().toUpperCase();
+            const isStrict = chkStrictCode.checked;
+
+            // Toggle clear button
+            btnClearSearch.classList.toggle('hidden', query.length === 0);
+
+            if (!query) {
+                filteredResults = db;
+            } else {
+                // Normalize query for quick matching
+                const cleanQuery = query.replace(/\./g, '');
+
+                filteredResults = db.filter(item => {
+                    const cleanCode = (item.code || '').toUpperCase().replace(/\./g, '');
+                    const name = (item.name || '').toUpperCase();
+
+                    if (isStrict) {
+                        return cleanCode === cleanQuery;
+                    }
+
+                    // Digit-by-digit or word matching
+                    return cleanCode.includes(cleanQuery) || name.includes(query);
+                });
+            }
+
+            filteredCountEl.textContent = filteredResults.length.toLocaleString();
+            renderResults();
+        }
+
+        // Render virtualized list
+        function renderResults() {
+            resultsList.innerHTML = '';
+
+            if (filteredResults.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            // Render first batch for zero-lag responsiveness
+            const batch = filteredResults.slice(0, BATCH_SIZE);
+            const query = searchInput.value.trim();
+
+            const fragment = document.createDocumentFragment();
+
+            batch.forEach(item => {
+                const row = document.createElement('div');
+                row.className = "p-4 md:py-3.5 md:px-6 hover:bg-blue-50/60 transition border-b border-slate-100 flex flex-col md:grid md:grid-cols-12 gap-2 md:gap-4 items-start md:items-center text-sm";
+
+                // Format Sex badge color
+                let sexBadge = '<span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs font-semibold">Ambos</span>';
+                if (item.sex === 'M' || item.sex === 'Mujer') {
+                    sexBadge = '<span class="bg-pink-100 text-pink-700 px-2 py-0.5 rounded text-xs font-semibold"><i class="fa-solid fa-venus mr-1"></i>Mujer</span>';
+                } else if (item.sex === 'H' || item.sex === 'Hombre') {
+                    sexBadge = '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold"><i class="fa-solid fa-mars mr-1"></i>Hombre</span>';
+                }
+
+                // Highlight text
+                const highlightedCode = highlightText(item.code, query);
+                const highlightedName = highlightText(item.name, query);
+
+                row.innerHTML = `
+                    <!-- Code -->
+                    <div class="md:col-span-2 flex items-center justify-between w-full md:w-auto">
+                        <span class="font-mono font-bold text-blue-900 bg-blue-100/80 px-2.5 py-1 rounded border border-blue-200/80 text-xs sm:text-sm tracking-wide">
+                            ${highlightedCode}
+                        </span>
+                        <!-- Mobile Copy Button -->
+                        <button onclick="copyCode('${item.code}', '${escapeHtml(item.name)}')" class="md:hidden text-slate-400 hover:text-blue-600 p-1.5 active:scale-95 transition">
+                            <i class="fa-regular fa-copy text-base"></i>
+                        </button>
+                    </div>
+
+                    <!-- Denomination -->
+                    <div class="md:col-span-5 text-slate-800 font-medium leading-snug">
+                        ${highlightedName}
+                    </div>
+
+                    <!-- Sex -->
+                    <div class="md:col-span-2 md:text-center text-xs text-slate-500">
+                        <span class="md:hidden font-semibold text-slate-400">Sexo: </span>${sexBadge}
+                    </div>
+
+                    <!-- Min / Max Age -->
+                    <div class="md:col-span-2 md:text-center text-xs text-slate-600 font-mono">
+                        <span class="md:hidden font-semibold text-slate-400 font-sans">Edad: </span>
+                        ${item.minAge || '0'} - ${item.maxAge || '120 AÑOS'}
+                    </div>
+
+                    <!-- Desktop Copy Action -->
+                    <div class="hidden md:flex md:col-span-1 justify-center">
+                        <button onclick="copyCode('${item.code}', '${escapeHtml(item.name)}')" title="Copiar diagnóstico" class="bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-600 p-2 rounded-lg transition active:scale-90">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                `;
+
+                fragment.appendChild(row);
+            });
+
+            resultsList.appendChild(fragment);
+        }
+
+        // Helper to highlight matching queries
+        function highlightText(text, query) {
+            if (!query || !text) return text || '';
+            const regex = new RegExp(`(${escapeRegExp(query)})`, 'gi');
+            return text.replace(regex, '<mark class="highlight">$1</mark>');
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function escapeHtml(text) {
+            return (text || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        // Copy Diagnostic Function
+        window.copyCode = function(code, name) {
+            const textToCopy = `${code} - ${name}`;
+            
+            // Clipboard fallback for frame restrictions
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(textToCopy);
+            } else {
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+
+            showToast(`Copiado: ${code}`, 'success');
+        };
+
+        // Event Listeners setup
+        function setupEvents() {
+            // Real-time input filtering (Instant)
+            searchInput.addEventListener('input', performSearch);
+            chkStrictCode.addEventListener('change', performSearch);
+
+            btnClearSearch.addEventListener('click', () => {
+                searchInput.value = '';
+                performSearch();
+                searchInput.focus();
+            });
+
+            // Keyboard shortcut ESC
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    searchInput.value = '';
+                    performSearch();
+                }
+            });
+
+            // Modal handlers
+            btnImportModal.addEventListener('click', () => importModal.classList.remove('hidden'));
+            btnCloseModal.addEventListener('click', () => importModal.classList.add('hidden'));
+            btnCancelModal.addEventListener('click', () => importModal.classList.add('hidden'));
+
+            // Drag and drop setup
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+
+            // Reset Data
+            btnResetData.addEventListener('click', () => {
+                if (confirm('¿Desea restablecer los datos al listado inicial predeterminado?')) {
+                    localStorage.removeItem('SAN_MIGUEL_CIE10_DB');
+                    db = [...SAMPLE_CIE10_DATA];
+                    updateStats();
+                    performSearch();
+                    showToast('Datos restablecidos correctamente', 'info');
+                }
+            });
+        }
+
+        // Process Excel / CSV Files
+        function handleFileSelect(file) {
+            uploadProgress.classList.remove('hidden');
+            progressText.textContent = `Leyendo ${file.name}...`;
+
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Read First Sheet
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    parseAndLoadExcelRows(jsonData);
+                } catch (err) {
+                    console.error(err);
+                    showToast('Error al leer el archivo Excel/CSV', 'error');
+                    uploadProgress.classList.add('hidden');
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Parse rows from Excel matching user structure (A: Code, B: Description, C: Sex, D: MinAge, E: MaxAge, F: MatCond)
+        function parseAndLoadExcelRows(rows) {
+            if (!rows || rows.length === 0) {
+                showToast('El archivo está vacío', 'error');
+                uploadProgress.classList.add('hidden');
+                return;
+            }
+
+            const parsedDb = [];
+            let startIndex = 0;
+
+            // Detect if row 0 is header
+            if (rows[0] && (rows[0][0] || '').toString().toLowerCase().includes('regla') || 
+                (rows[0][0] || '').toString().toLowerCase().includes('codigo') || 
+                (rows[0][0] || '').toString().toLowerCase().includes('cie')) {
+                // Skip header block (e.g. up to row 3 as seen in spreadsheet screenshot)
+                for (let i = 0; i < Math.min(rows.length, 10); i++) {
+                    const cellVal = (rows[i][0] || '').toString().toUpperCase();
+                    if (cellVal.match(/^[A-Z]\d{2,3}/)) {
+                        startIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            for (let i = startIndex; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row[0]) continue; // Skip empty code
+
+                const code = row[0].toString().trim();
+                const name = row[1] ? row[1].toString().trim() : '';
+
+                if (code && name) {
+                    parsedDb.push({
+                        code: code,
+                        name: name,
+                        sex: row[2] ? row[2].toString().trim() : 'A',
+                        minAge: row[3] ? row[3].toString().trim() : '0 DIAS',
+                        maxAge: row[4] ? row[4].toString().trim() : '120 AÑOS',
+                        matCond: row[5] ? row[5].toString().trim() : 'NO APLICA'
+                    });
+                }
+            }
+
+            if (parsedDb.length > 0) {
+                db = parsedDb;
+                saveToLocalStorage(db);
+                updateStats();
+                performSearch();
+                
+                uploadProgress.classList.add('hidden');
+                importModal.classList.add('hidden');
+                fileInput.value = '';
+
+                showToast(`¡Éxito! ${db.length.toLocaleString()} diagnósticos cargados`, 'success');
+            } else {
+                showToast('No se encontraron registros válidos de CIE-10 en las columnas A y B', 'error');
+                uploadProgress.classList.add('hidden');
+            }
+        }
+
+        // Notification Toast
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastMessage.textContent = message;
+
+            if (type === 'success') {
+                toastIcon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+            } else if (type === 'error') {
+                toastIcon.className = 'fa-solid fa-triangle-exclamation text-rose-400 text-lg';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-info text-blue-400 text-lg';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
